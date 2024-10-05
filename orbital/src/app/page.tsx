@@ -17,7 +17,9 @@ import {
 
 // Function to fetch data from NASA API
 const fetchNASAData = async () => {
-  const response = await fetch("https://data.nasa.gov/resource/b67r-rgxc.json");
+  const response = await fetch(
+    "https://data.nasa.gov/resource/b67r-rgxc.json?$limit=50",
+  );
   const data = await response.json();
   return data.map((item) => ({
     id: item.object,
@@ -40,7 +42,14 @@ const fetchCelestrakData = async () => {
     "https://celestrak.org/NORAD/elements/gp.php?NAME=COSMOS%202251%20DEB&FORMAT=JSON",
   );
   const data = await response.json();
-  return data.map((item) => ({
+
+  // Shuffle the data and select 50 random items
+  const randomData = data
+    .sort(() => Math.random() - 0.5) // Shuffle the data
+    .slice(0, 50); // Select the first 50 items
+
+  // Map and return the selected random objects
+  return randomData.map((item) => ({
     id: item.OBJECT_ID,
     name: item.OBJECT_NAME,
     epoch: new Date(item.EPOCH),
