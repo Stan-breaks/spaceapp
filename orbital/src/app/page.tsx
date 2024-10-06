@@ -1,7 +1,7 @@
 "use client";
 import React, { useState, useEffect, useRef, useMemo } from "react";
 import { Canvas, useFrame } from "@react-three/fiber";
-import { OrbitControls, Stars, Text } from "@react-three/drei";
+import { OrbitControls, Stars } from "@react-three/drei";
 import * as THREE from "three";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Globe, Info, AlertTriangle } from "lucide-react";
