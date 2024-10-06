@@ -9,17 +9,7 @@ import {
 } from "@react-three/drei";
 import * as THREE from "three";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
-import {
-  Globe,
-  Info,
-  AlertTriangle,
-  ZoomIn,
-  ZoomOut,
-  Pause,
-  Play,
-  FastForward,
-  Rewind,
-} from "lucide-react";
+import { Globe, Info, AlertTriangle, ZoomIn, ZoomOut } from "lucide-react";
 import {
   LineChart,
   Line as RechartsLine,
@@ -29,7 +19,6 @@ import {
   ResponsiveContainer,
   Legend as RechartsLegend,
 } from "recharts";
-import { MeshStandardMaterial } from "three";
 
 // Type definitions
 interface SpaceObject {
@@ -68,7 +57,7 @@ interface Collision {
 const EARTH_RADIUS = 1;
 const MIN_ORBIT_RADIUS = EARTH_RADIUS * 1.5;
 const MAX_ORBIT_RADIUS = EARTH_RADIUS * 10;
-const MIN_ORBIT_DISTANCE = EARTH_RADIUS * 1.2; // Minimum orbit distance from Earth's center
+const MIN_ORBIT_DISTANCE = Math.max(EARTH_RADIUS * 1.2, MIN_ORBIT_RADIUS); // Use the larger of the two
 
 const generateRandomObject = (type: SpaceObject["type"]): SpaceObject => {
   const orbitRadius = Math.max(
@@ -483,7 +472,6 @@ const SpaceDebrisVisualization3D: React.FC = () => {
     debris: true,
     comet: true,
   });
-  const [searchTerm, setSearchTerm] = useState("");
   const [followedObject, setFollowedObject] = useState<SpaceObject | null>(
     null,
   );
@@ -516,8 +504,30 @@ const SpaceDebrisVisualization3D: React.FC = () => {
         position: objectPositionsRef.current[obj.id],
       }));
       const currentCollisions = detectCollisions(objects);
-      const predictedCollisions = predictCollisions(objects, 100, 0.1); // Predict 100 steps ahead, 0.1 time units per step
-      setCollisions([...currentCollisions, ...predictedCollisions]);
+      const predictedCollisions = predictCollisions(objects, 100, 0.1);
+      setCollisions((prevCollisions) => {
+        const newCollisions = [...currentCollisions, ...predictedCollisions];
+        const allCollisions = [...prevCollisions, ...newCollisions];
+        // Remove duplicates based on object IDs
+        const uniqueCollisions = allCollisions.filter(
+          (collision, index, self) =>
+            index ===
+            self.findIndex(
+              (c) =>
+                c.obj1.id === collision.obj1.id &&
+                c.obj2.id === collision.obj2.id,
+            ),
+        );
+        // Sort by time to collision (if available) or distance
+        uniqueCollisions.sort((a, b) => {
+          if (a.timeToCollision && b.timeToCollision) {
+            return a.timeToCollision - b.timeToCollision;
+          }
+          return a.distance - b.distance;
+        });
+        // Return only the 4 most recent collisions
+        return uniqueCollisions.slice(0, 4);
+      });
     };
 
     const interval = setInterval(checkCollisions, 1000);
@@ -536,16 +546,6 @@ const SpaceDebrisVisualization3D: React.FC = () => {
     setFilters((prev) => ({ ...prev, [type]: !prev[type] }));
   };
 
-  const handleSearch = (event: React.ChangeEvent<HTMLInputElement>) => {
-    setSearchTerm(event.target.value);
-  };
-
-  const filteredData = data.filter(
-    (obj) =>
-      obj.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      obj.id.toLowerCase().includes(searchTerm.toLowerCase()),
-  );
-
   const stopFollowing = () => {
     setFollowedObject(null);
   };
@@ -555,7 +555,7 @@ const SpaceDebrisVisualization3D: React.FC = () => {
       <div className="w-full md:w-2/3 h-full relative">
         <Canvas>
           <Scene
-            data={filteredData}
+            data={data}
             onObjectClick={handleObjectClick}
             setPosition={setPosition}
             cameraZoom={cameraZoom}
@@ -587,15 +587,6 @@ const SpaceDebrisVisualization3D: React.FC = () => {
       </div>
       <div className="w-full md:w-1/3 p-4 overflow-y-auto bg-gray-800">
         <h1 className="text-2xl font-bold mb-4">Space Objects and Debris</h1>
-        <div className="mb-4">
-          <input
-            type="text"
-            placeholder="Search objects..."
-            value={searchTerm}
-            onChange={handleSearch}
-            className="w-full px-3 py-2 text-black rounded"
-          />
-        </div>
         {collisions.map((collision, index) => (
           <CollisionAlert key={index} collision={collision} />
         ))}
@@ -674,3 +665,4 @@ const SpaceDebrisVisualization3D: React.FC = () => {
 };
 
 export default SpaceDebrisVisualization3D;
+
