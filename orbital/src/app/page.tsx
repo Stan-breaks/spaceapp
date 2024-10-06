@@ -1,10 +1,10 @@
 "use client";
 import React, { useState, useEffect, useRef, useMemo } from "react";
 import { Canvas, useFrame } from "@react-three/fiber";
-import { OrbitControls, Stars } from "@react-three/drei";
+import { OrbitControls, Stars, PerspectiveCamera } from "@react-three/drei";
 import * as THREE from "three";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
-import { Globe, Info, AlertTriangle } from "lucide-react";
+import { Globe, Info, AlertTriangle, ZoomIn, ZoomOut } from "lucide-react";
 import {
   LineChart,
   Line,
@@ -13,6 +13,7 @@ import {
   Tooltip,
   ResponsiveContainer,
 } from "recharts";
+import { MeshStandardMaterial } from "three";
 
 // Type definitions
 interface SpaceObject {
@@ -127,7 +128,7 @@ const Earth: React.FC = () => {
   return (
     <mesh ref={meshRef}>
       <sphereGeometry args={[EARTH_RADIUS, 32, 32]} />
-      <meshStandardMaterial map={texture} />
+      <meshStandardMaterial map={texture} emissive="#444444" emissiveIntensity={0.1} />
     </mesh>
   );
 };
@@ -162,16 +163,25 @@ const SpaceObject: React.FC<SpaceObjectProps> = ({
   });
 
   const color = {
-    satellite: "blue",
-    asteroid: "red",
-    debris: "gray",
-    comet: "green",
+    satellite: "#00FFFF", // Cyan
+    asteroid: "#FF1493", // Deep Pink
+    debris: "#7FFF00", // Chartreuse
+    comet: "#FF4500", // Orange Red
   }[object.type];
+
+  const material = useMemo(() => {
+    return new MeshStandardMaterial({
+      color: color,
+      emissive: color,
+      emissiveIntensity: 0.5,
+      toneMapped: false,
+    });
+  }, [color]);
 
   return (
     <mesh ref={meshRef} onClick={() => onClick(object)}>
       <sphereGeometry args={[object.size, 16, 16]} />
-      <meshStandardMaterial color={color} />
+      <primitive object={material} />
     </mesh>
   );
 };
@@ -180,13 +190,16 @@ interface SceneProps {
   data: SpaceObject[];
   onObjectClick: (object: SpaceObject) => void;
   setPosition: (id: string, position: THREE.Vector3) => void;
+  cameraZoom: number;
 }
 
-const Scene: React.FC<SceneProps> = ({ data, onObjectClick, setPosition }) => {
+const Scene: React.FC<SceneProps> = ({ data, onObjectClick, setPosition, cameraZoom }) => {
   return (
     <>
-      <ambientLight intensity={0.5} />
-      <pointLight position={[10, 10, 10]} />
+      <PerspectiveCamera makeDefault position={[0, 0, cameraZoom]} />
+      <ambientLight intensity={0.3} />
+      <pointLight position={[10, 10, 10]} intensity={1} />
+      <spotLight position={[-10, -10, -10]} angle={0.15} penumbra={1} intensity={0.5} />
       <Stars
         radius={100}
         depth={50}
@@ -205,7 +218,7 @@ const Scene: React.FC<SceneProps> = ({ data, onObjectClick, setPosition }) => {
           setPosition={setPosition}
         />
       ))}
-      <OrbitControls />
+      <OrbitControls enableZoom={false} />
     </>
   );
 };
@@ -272,6 +285,7 @@ const SpaceDebrisVisualization3D: React.FC = () => {
   );
   const [collisions, setCollisions] = useState<Collision[]>([]);
   const objectPositions = useRef<Record<string, THREE.Vector3>>({});
+  const [cameraZoom, setCameraZoom] = useState(15);
 
   const generateNewSample = async () => {
     const nasaData = await fetchNASAData();
@@ -310,24 +324,46 @@ const SpaceDebrisVisualization3D: React.FC = () => {
     return () => clearInterval(interval);
   }, [data]);
 
+  const handleZoom = (direction: 'in' | 'out') => {
+    setCameraZoom(prev => {
+      const newZoom = direction === 'in' ? prev * 0.9 : prev * 1.1;
+      return Math.max(5, Math.min(newZoom, 50)); // Limit zoom between 5 and 50
+    });
+  };
+
   return (
-    <div className="w-full h-screen flex flex-col md:flex-row">
+    <div className="w-full h-screen flex flex-col md:flex-row bg-gray-900 text-white">
       <div className="w-full md:w-2/3 h-full relative">
-        <Canvas camera={{ position: [0, 0, 15], fov: 60 }}>
+        <Canvas>
           <Scene
             data={data}
             onObjectClick={handleObjectClick}
             setPosition={setPosition}
+            cameraZoom={cameraZoom}
           />
         </Canvas>
-        <button
-          className="absolute bottom-4 right-4 bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded"
-          onClick={generateNewSample}
-        >
-          Generate New Sample
-        </button>
+        <div className="absolute bottom-4 right-4 flex space-x-2">
+          <button
+            className="bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded"
+            onClick={generateNewSample}
+          >
+            Generate New Sample
+          </button>
+          <button
+            className="bg-purple-500 hover:bg-purple-700 text-white font-bold py-2 px-4 rounded"
+            onClick={() => handleZoom('in')}
+          >
+            <ZoomIn className="h-5 w-5" />
+          </button>
+          <button
+            className="bg-purple-500 hover:bg-purple-700 text-white font-bold py-2 px-4 rounded"
+            onClick={() => handleZoom('out')}
+          >
+            <ZoomOut className="h-5 w-5" />
+          </button>
+        </div>
       </div>
-      <div className="w-full md:w-1/3 p-4 overflow-y-auto">
+      <div className="w-full md:w-1/3 p-4 overflow-y-auto bg-gray-800">
         <h1 className="text-2xl font-bold mb-4">Space Objects and Debris</h1>
         {collisions.map((collision, index) => (
           <CollisionAlert key={index} collision={collision} />
@@ -365,10 +401,10 @@ const SpaceDebrisVisualization3D: React.FC = () => {
               This 3D visualization shows a combination of NASA data and
               randomly generated space objects orbiting Earth. The objects are:
               <ul className="list-disc list-inside mt-2">
-                <li>Green spheres: Comets (NASA data)</li>
-                <li>Red spheres: Asteroids (NASA data and random)</li>
-                <li>Blue spheres: Satellites (random)</li>
-                <li>Gray spheres: Debris (random)</li>
+                <li>Orange Red spheres: Comets (NASA data)</li>
+                <li>Deep Pink spheres: Asteroids (NASA data and random)</li>
+                <li>Cyan spheres: Satellites (random)</li>
+                <li>Chartreuse spheres: Debris (random)</li>
               </ul>
               Click on any object for more information.
             </AlertDescription>
