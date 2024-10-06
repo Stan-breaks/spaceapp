@@ -1,17 +1,33 @@
 "use client";
 import React, { useState, useEffect, useRef, useMemo } from "react";
 import { Canvas, useFrame } from "@react-three/fiber";
-import { OrbitControls, Stars, PerspectiveCamera } from "@react-three/drei";
+import {
+  OrbitControls,
+  Stars,
+  PerspectiveCamera,
+  Line,
+} from "@react-three/drei";
 import * as THREE from "three";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
-import { Globe, Info, AlertTriangle, ZoomIn, ZoomOut } from "lucide-react";
+import {
+  Globe,
+  Info,
+  AlertTriangle,
+  ZoomIn,
+  ZoomOut,
+  Pause,
+  Play,
+  FastForward,
+  Rewind,
+} from "lucide-react";
 import {
   LineChart,
-  Line,
+  Line as RechartsLine,
   XAxis,
   YAxis,
   Tooltip,
   ResponsiveContainer,
+  Legend as RechartsLegend,
 } from "recharts";
 import { MeshStandardMaterial } from "three";
 
@@ -46,15 +62,20 @@ interface Collision {
   obj1: SpaceObject;
   obj2: SpaceObject;
   distance: number;
+  timeToCollision?: number;
 }
 
 const EARTH_RADIUS = 1;
 const MIN_ORBIT_RADIUS = EARTH_RADIUS * 1.5;
 const MAX_ORBIT_RADIUS = EARTH_RADIUS * 10;
+const MIN_ORBIT_DISTANCE = EARTH_RADIUS * 1.2; // Minimum orbit distance from Earth's center
 
 const generateRandomObject = (type: SpaceObject["type"]): SpaceObject => {
-  const orbitRadius =
-    Math.random() * (MAX_ORBIT_RADIUS - MIN_ORBIT_RADIUS) + MIN_ORBIT_RADIUS;
+  const orbitRadius = Math.max(
+    Math.random() * (MAX_ORBIT_RADIUS - MIN_ORBIT_DISTANCE) +
+      MIN_ORBIT_DISTANCE,
+    MIN_ORBIT_DISTANCE,
+  );
   const speed = (Math.random() * 0.2 + 0.1) * (Math.random() < 0.5 ? 1 : -1);
   const eccentricity = Math.random() * 0.5;
   return {
@@ -89,7 +110,7 @@ const fetchNASAData = async (): Promise<SpaceObject[]> => {
     type: item.object.startsWith("P/") ? "comet" : "asteroid",
     orbitRadius: Math.max(
       parseFloat(item.q_au_1) * EARTH_RADIUS,
-      MIN_ORBIT_RADIUS,
+      MIN_ORBIT_DISTANCE,
     ),
     speed: 0.1 / parseFloat(item.p_yr),
     phase: Math.random() * Math.PI * 2,
@@ -116,6 +137,35 @@ const detectCollisions = (objects: SpaceObject[]): Collision[] => {
     }
   }
   return collisions;
+};
+
+const predictCollisions = (
+  objects: SpaceObject[],
+  timeSteps: number,
+  stepSize: number,
+): Collision[] => {
+  const predictedCollisions: Collision[] = [];
+  for (let step = 1; step <= timeSteps; step++) {
+    const futurePositions = objects.map((obj) => {
+      const t = step * stepSize * obj.speed;
+      const a = Math.max(obj.orbitRadius, MIN_ORBIT_DISTANCE);
+      const b = a * Math.sqrt(1 - obj.eccentricity * obj.eccentricity);
+      const angle = t + obj.phase;
+      const x = a * Math.cos(angle) * Math.cos(obj.inclination);
+      const y = b * Math.sin(angle);
+      const z = a * Math.cos(angle) * Math.sin(obj.inclination);
+      return { ...obj, position: new THREE.Vector3(x, y, z) };
+    });
+
+    const stepCollisions = detectCollisions(futurePositions);
+    predictedCollisions.push(
+      ...stepCollisions.map((c) => ({
+        ...c,
+        timeToCollision: step * stepSize,
+      })),
+    );
+  }
+  return predictedCollisions;
 };
 
 const Earth: React.FC = () => {
@@ -149,11 +199,12 @@ const SpaceObject: React.FC<SpaceObjectProps> = ({
   setPosition,
 }) => {
   const meshRef = useRef<THREE.Mesh>(null);
+  const [trail, setTrail] = useState<THREE.Vector3[]>([]);
 
   useFrame(({ clock }) => {
     if (meshRef.current) {
       const t = clock.getElapsedTime() * object.speed;
-      const a = object.orbitRadius;
+      const a = Math.max(object.orbitRadius, MIN_ORBIT_DISTANCE);
       const b = a * Math.sqrt(1 - object.eccentricity * object.eccentricity);
       const angle = t + object.phase;
 
@@ -161,8 +212,25 @@ const SpaceObject: React.FC<SpaceObjectProps> = ({
       const y = b * Math.sin(angle);
       const z = a * Math.cos(angle) * Math.sin(object.inclination);
 
-      meshRef.current.position.set(x, y, z);
-      setPosition(object.id, new THREE.Vector3(x, y, z));
+      // Ensure minimum distance from Earth's center
+      const distance = Math.sqrt(x * x + y * y + z * z);
+      const scale = Math.max(distance, MIN_ORBIT_DISTANCE) / distance;
+
+      const finalX = x * scale;
+      const finalY = y * scale;
+      const finalZ = z * scale;
+
+      meshRef.current.position.set(finalX, finalY, finalZ);
+      setPosition(object.id, new THREE.Vector3(finalX, finalY, finalZ));
+
+      // Update trail
+      setTrail((prevTrail) => {
+        const newTrail = [
+          ...prevTrail,
+          new THREE.Vector3(finalX, finalY, finalZ),
+        ];
+        return newTrail.slice(-100); // Keep last 100 positions
+      });
     }
   });
 
@@ -174,7 +242,7 @@ const SpaceObject: React.FC<SpaceObjectProps> = ({
   }[object.type];
 
   const material = useMemo(() => {
-    return new MeshStandardMaterial({
+    return new THREE.MeshStandardMaterial({
       color: color,
       emissive: color,
       emissiveIntensity: 0.5,
@@ -183,10 +251,21 @@ const SpaceObject: React.FC<SpaceObjectProps> = ({
   }, [color]);
 
   return (
-    <mesh ref={meshRef} onClick={() => onClick(object)}>
-      <sphereGeometry args={[object.size, 16, 16]} />
-      <primitive object={material} />
-    </mesh>
+    <>
+      <mesh ref={meshRef} onClick={() => onClick(object)}>
+        <sphereGeometry args={[object.size, 16, 16]} />
+        <primitive object={material} />
+      </mesh>
+      {trail.length > 1 && (
+        <Line
+          points={trail}
+          color={color}
+          lineWidth={1}
+          opacity={0.5}
+          transparent
+        />
+      )}
+    </>
   );
 };
 
@@ -195,6 +274,8 @@ interface SceneProps {
   onObjectClick: (object: SpaceObject) => void;
   setPosition: (id: string, position: THREE.Vector3) => void;
   cameraZoom: number;
+  filters: Record<SpaceObject["type"], boolean>;
+  followedObject: SpaceObject | null;
 }
 
 const Scene: React.FC<SceneProps> = ({
@@ -202,10 +283,33 @@ const Scene: React.FC<SceneProps> = ({
   onObjectClick,
   setPosition,
   cameraZoom,
+  filters,
+  followedObject,
 }) => {
+  const cameraRef = useRef<THREE.PerspectiveCamera>(null);
+  const objectPositionsRef = useRef<Record<string, THREE.Vector3>>({});
+
+  useFrame(() => {
+    if (followedObject && cameraRef.current) {
+      const objectPosition = objectPositionsRef.current[followedObject.id];
+      if (objectPosition) {
+        cameraRef.current.position
+          .copy(objectPosition)
+          .add(new THREE.Vector3(0, 0, 5));
+        cameraRef.current.lookAt(objectPosition);
+      }
+    }
+  });
+
+  const filteredData = data.filter((object) => filters[object.type]);
+
   return (
     <>
-      <PerspectiveCamera makeDefault position={[0, 0, cameraZoom]} />
+      <PerspectiveCamera
+        ref={cameraRef}
+        makeDefault
+        position={[0, 0, followedObject ? 5 : cameraZoom]}
+      />
       <ambientLight intensity={0.3} />
       <pointLight position={[10, 10, 10]} intensity={1} />
       <spotLight
@@ -224,7 +328,7 @@ const Scene: React.FC<SceneProps> = ({
         speed={1}
       />
       <Earth />
-      {data.map((object) => (
+      {filteredData.map((object) => (
         <SpaceObject
           key={object.id}
           object={object}
@@ -244,25 +348,59 @@ interface ObjectTypeDistributionProps {
 const ObjectTypeDistribution: React.FC<ObjectTypeDistributionProps> = ({
   data,
 }) => {
-  const typeCount = data.reduce<Record<string, number>>((acc, obj) => {
-    acc[obj.type] = (acc[obj.type] || 0) + 1;
+  const typeStats = data.reduce<
+    Record<string, { count: number; totalRadius: number; totalSpeed: number }>
+  >((acc, obj) => {
+    if (!acc[obj.type]) {
+      acc[obj.type] = { count: 0, totalRadius: 0, totalSpeed: 0 };
+    }
+    acc[obj.type].count += 1;
+    acc[obj.type].totalRadius += obj.orbitRadius;
+    acc[obj.type].totalSpeed += Math.abs(obj.speed);
     return acc;
   }, {});
 
-  const chartData = Object.entries(typeCount).map(([type, count]) => ({
+  const chartData = Object.entries(typeStats).map(([type, stats]) => ({
     type,
-    count,
+    count: stats.count,
+    avgRadius: stats.totalRadius / stats.count,
+    avgSpeed: stats.totalSpeed / stats.count,
   }));
 
   return (
     <div className="mt-4">
-      <h2 className="text-lg font-semibold mb-2">Object Type Distribution</h2>
-      <ResponsiveContainer width="100%" height={200}>
-        <LineChart data={chartData}>
-          <XAxis dataKey="type" />
-          <YAxis />
+      <h2 className="text-lg font-semibold mb-2">Object Type Statistics</h2>
+      <ResponsiveContainer width="100%" height={300}>
+        <LineChart
+          data={chartData}
+          margin={{ top: 5, right: 30, left: 20, bottom: 5 }}
+        >
+          <XAxis dataKey="name" />
+          <YAxis yAxisId="left" />
+          <YAxis yAxisId="right" orientation="right" />
           <Tooltip />
-          <Line type="monotone" dataKey="count" stroke="#8884d8" />
+          <RechartsLegend />
+          <RechartsLine
+            yAxisId="left"
+            type="monotone"
+            dataKey="count"
+            stroke="#8884d8"
+            name="Count"
+          />
+          <RechartsLine
+            yAxisId="left"
+            type="monotone"
+            dataKey="avgRadius"
+            stroke="#82ca9d"
+            name="Avg Radius"
+          />
+          <RechartsLine
+            yAxisId="right"
+            type="monotone"
+            dataKey="avgSpeed"
+            stroke="#ffc658"
+            name="Avg Speed"
+          />
         </LineChart>
       </ResponsiveContainer>
     </div>
@@ -274,9 +412,19 @@ interface CollisionAlertProps {
 }
 
 const CollisionAlert: React.FC<CollisionAlertProps> = ({ collision }) => (
-  <Alert className="mb-4 bg-red-100 border-red-400">
-    <AlertTriangle className="h-4 w-4 text-red-600" />
-    <AlertTitle className="text-red-700">Collision Detected!</AlertTitle>
+  <Alert
+    className={`mb-4 ${collision.timeToCollision ? "bg-yellow-100 border-yellow-400" : "bg-red-100 border-red-400"}`}
+  >
+    <AlertTriangle
+      className={`h-4 w-4 ${collision.timeToCollision ? "text-yellow-600" : "text-red-600"}`}
+    />
+    <AlertTitle
+      className={collision.timeToCollision ? "text-yellow-700" : "text-red-700"}
+    >
+      {collision.timeToCollision
+        ? "Collision Predicted!"
+        : "Collision Detected!"}
+    </AlertTitle>
     <AlertDescription>
       <p>Objects involved:</p>
       <ul className="list-disc list-inside">
@@ -288,9 +436,38 @@ const CollisionAlert: React.FC<CollisionAlertProps> = ({ collision }) => (
         </li>
       </ul>
       <p>Distance: {collision.distance.toFixed(4)} units</p>
+      {collision.timeToCollision && (
+        <p>
+          Time to collision: {collision.timeToCollision.toFixed(2)} time units
+        </p>
+      )}
     </AlertDescription>
   </Alert>
 );
+
+const Legend: React.FC = () => {
+  const legendItems = [
+    { color: "#FF4500", label: "Comets (NASA data)" },
+    { color: "#FF1493", label: "Asteroids (NASA data and random)" },
+    { color: "#00FFFF", label: "Satellites (random)" },
+    { color: "#7FFF00", label: "Debris (random)" },
+  ];
+
+  return (
+    <div className="absolute top-4 left-4 bg-black bg-opacity-50 p-4 rounded">
+      <h3 className="text-lg font-semibold mb-2">Legend</h3>
+      {legendItems.map(({ color, label }) => (
+        <div key={label} className="flex items-center mb-1">
+          <div
+            className="w-4 h-4 mr-2"
+            style={{ backgroundColor: color }}
+          ></div>
+          <span>{label}</span>
+        </div>
+      ))}
+    </div>
+  );
+};
 
 const SpaceDebrisVisualization3D: React.FC = () => {
   const [data, setData] = useState<SpaceObject[]>([]);
@@ -298,8 +475,18 @@ const SpaceDebrisVisualization3D: React.FC = () => {
     null,
   );
   const [collisions, setCollisions] = useState<Collision[]>([]);
-  const objectPositions = useRef<Record<string, THREE.Vector3>>({});
+  const objectPositionsRef = useRef<Record<string, THREE.Vector3>>({});
   const [cameraZoom, setCameraZoom] = useState(15);
+  const [filters, setFilters] = useState<Record<SpaceObject["type"], boolean>>({
+    satellite: true,
+    asteroid: true,
+    debris: true,
+    comet: true,
+  });
+  const [searchTerm, setSearchTerm] = useState("");
+  const [followedObject, setFollowedObject] = useState<SpaceObject | null>(
+    null,
+  );
 
   const generateNewSample = async () => {
     const nasaData = await fetchNASAData();
@@ -315,22 +502,22 @@ const SpaceDebrisVisualization3D: React.FC = () => {
 
   const handleObjectClick = (object: SpaceObject) => {
     setSelectedObject(object);
+    setFollowedObject(object);
   };
 
   const setPosition = (id: string, position: THREE.Vector3) => {
-    objectPositions.current[id] = position;
+    objectPositionsRef.current[id] = position;
   };
 
   useEffect(() => {
     const checkCollisions = () => {
       const objects = data.map((obj) => ({
         ...obj,
-        position: objectPositions.current[obj.id],
+        position: objectPositionsRef.current[obj.id],
       }));
-      const newCollisions = detectCollisions(objects);
-      if (newCollisions.length > 0) {
-        setCollisions(newCollisions);
-      }
+      const currentCollisions = detectCollisions(objects);
+      const predictedCollisions = predictCollisions(objects, 100, 0.1); // Predict 100 steps ahead, 0.1 time units per step
+      setCollisions([...currentCollisions, ...predictedCollisions]);
     };
 
     const interval = setInterval(checkCollisions, 1000);
@@ -345,17 +532,38 @@ const SpaceDebrisVisualization3D: React.FC = () => {
     });
   };
 
+  const toggleFilter = (type: SpaceObject["type"]) => {
+    setFilters((prev) => ({ ...prev, [type]: !prev[type] }));
+  };
+
+  const handleSearch = (event: React.ChangeEvent<HTMLInputElement>) => {
+    setSearchTerm(event.target.value);
+  };
+
+  const filteredData = data.filter(
+    (obj) =>
+      obj.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      obj.id.toLowerCase().includes(searchTerm.toLowerCase()),
+  );
+
+  const stopFollowing = () => {
+    setFollowedObject(null);
+  };
+
   return (
     <div className="w-full h-screen flex flex-col md:flex-row bg-gray-900 text-white">
       <div className="w-full md:w-2/3 h-full relative">
         <Canvas>
           <Scene
-            data={data}
+            data={filteredData}
             onObjectClick={handleObjectClick}
             setPosition={setPosition}
             cameraZoom={cameraZoom}
+            filters={filters}
+            followedObject={followedObject}
           />
         </Canvas>
+        <Legend />
         <div className="absolute bottom-4 right-4 flex space-x-2">
           <button
             className="bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded"
@@ -379,6 +587,15 @@ const SpaceDebrisVisualization3D: React.FC = () => {
       </div>
       <div className="w-full md:w-1/3 p-4 overflow-y-auto bg-gray-800">
         <h1 className="text-2xl font-bold mb-4">Space Objects and Debris</h1>
+        <div className="mb-4">
+          <input
+            type="text"
+            placeholder="Search objects..."
+            value={searchTerm}
+            onChange={handleSearch}
+            className="w-full px-3 py-2 text-black rounded"
+          />
+        </div>
         {collisions.map((collision, index) => (
           <CollisionAlert key={index} collision={collision} />
         ))}
@@ -424,11 +641,36 @@ const SpaceDebrisVisualization3D: React.FC = () => {
             </AlertDescription>
           </Alert>
         )}
+        {selectedObject && (
+          <button
+            className="mt-4 bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded"
+            onClick={
+              followedObject
+                ? stopFollowing
+                : () => setFollowedObject(selectedObject)
+            }
+          >
+            {followedObject ? "Stop Following" : "Follow Object"}
+          </button>
+        )}
         <ObjectTypeDistribution data={data} />
+        <div className="mt-4">
+          <h2 className="text-lg font-semibold mb-2">Filters</h2>
+          {Object.entries(filters).map(([type, isActive]) => (
+            <button
+              key={type}
+              className={`mr-2 mb-2 px-3 py-1 rounded ${
+                isActive ? "bg-blue-500" : "bg-gray-500"
+              }`}
+              onClick={() => toggleFilter(type as SpaceObject["type"])}
+            >
+              {type}
+            </button>
+          ))}
+        </div>
       </div>
     </div>
   );
 };
 
 export default SpaceDebrisVisualization3D;
-
