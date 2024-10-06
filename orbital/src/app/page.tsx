@@ -31,6 +31,16 @@ interface SpaceObject {
   position?: THREE.Vector3;
 }
 
+interface NASAApiItem {
+  object: string;
+  object_name?: string;
+  q_au_1: string;
+  p_yr: string;
+  i_deg: string;
+  e: string;
+  q_au_2: string;
+}
+
 interface Collision {
   obj1: SpaceObject;
   obj2: SpaceObject;
@@ -71,8 +81,8 @@ const fetchNASAData = async (): Promise<SpaceObject[]> => {
   const response = await fetch(
     "https://data.nasa.gov/resource/b67r-rgxc.json?$limit=10",
   );
-  const data = await response.json();
-  return data.map((item: any) => ({
+  const data: NASAApiItem[] = await response.json();
+  return data.map((item) => ({
     id: item.object,
     name: item.object_name || item.object,
     type: item.object.startsWith("P/") ? "comet" : "asteroid",
@@ -90,7 +100,6 @@ const fetchNASAData = async (): Promise<SpaceObject[]> => {
     orbitalPeriod: parseFloat(item.p_yr),
   }));
 };
-
 const detectCollisions = (objects: SpaceObject[]): Collision[] => {
   const collisions: Collision[] = [];
   for (let i = 0; i < objects.length; i++) {
