@@ -14,14 +14,37 @@ import {
   ResponsiveContainer,
 } from "recharts";
 
+// Type definitions
+interface SpaceObject {
+  id: string;
+  name: string;
+  type: "satellite" | "asteroid" | "debris" | "comet";
+  orbitRadius: number;
+  speed: number;
+  phase: number;
+  inclination: number;
+  size: number;
+  eccentricity: number;
+  perihelion?: number;
+  aphelion?: number;
+  orbitalPeriod?: number;
+  position?: THREE.Vector3;
+}
+
+interface Collision {
+  obj1: SpaceObject;
+  obj2: SpaceObject;
+  distance: number;
+}
+
 const EARTH_RADIUS = 1;
 const MIN_ORBIT_RADIUS = EARTH_RADIUS * 1.5;
 const MAX_ORBIT_RADIUS = EARTH_RADIUS * 10;
 
-const generateRandomObject = (type) => {
+const generateRandomObject = (type: SpaceObject["type"]): SpaceObject => {
   const orbitRadius =
     Math.random() * (MAX_ORBIT_RADIUS - MIN_ORBIT_RADIUS) + MIN_ORBIT_RADIUS;
-  const speed = (Math.random() * 0.2 + 0.1) * (Math.random() < 0.5 ? 1 : -1); // Increased speed
+  const speed = (Math.random() * 0.2 + 0.1) * (Math.random() < 0.5 ? 1 : -1);
   const eccentricity = Math.random() * 0.5;
   return {
     id: Math.random().toString(36).substr(2, 9),
@@ -36,20 +59,20 @@ const generateRandomObject = (type) => {
   };
 };
 
-const generateRandomData = (count) => {
-  const types = ["satellite", "asteroid", "debris"];
+const generateRandomData = (count: number): SpaceObject[] => {
+  const types: SpaceObject["type"][] = ["satellite", "asteroid", "debris"];
   return Array.from({ length: count }, () => {
     const type = types[Math.floor(Math.random() * types.length)];
     return generateRandomObject(type);
   });
 };
 
-const fetchNASAData = async () => {
+const fetchNASAData = async (): Promise<SpaceObject[]> => {
   const response = await fetch(
     "https://data.nasa.gov/resource/b67r-rgxc.json?$limit=10",
   );
   const data = await response.json();
-  return data.map((item) => ({
+  return data.map((item: any) => ({
     id: item.object,
     name: item.object_name || item.object,
     type: item.object.startsWith("P/") ? "comet" : "asteroid",
@@ -57,7 +80,7 @@ const fetchNASAData = async () => {
       parseFloat(item.q_au_1) * EARTH_RADIUS,
       MIN_ORBIT_RADIUS,
     ),
-    speed: 0.1 / parseFloat(item.p_yr), // Adjusted speed calculation
+    speed: 0.1 / parseFloat(item.p_yr),
     phase: Math.random() * Math.PI * 2,
     inclination: parseFloat(item.i_deg) * (Math.PI / 180),
     size: 0.05,
@@ -68,27 +91,25 @@ const fetchNASAData = async () => {
   }));
 };
 
-const detectCollisions = (objects) => {
-  const collisions = [];
+const detectCollisions = (objects: SpaceObject[]): Collision[] => {
+  const collisions: Collision[] = [];
   for (let i = 0; i < objects.length; i++) {
     for (let j = i + 1; j < objects.length; j++) {
       const obj1 = objects[i];
       const obj2 = objects[j];
-      const distance = Math.sqrt(
-        Math.pow(obj1.position.x - obj2.position.x, 2) +
-          Math.pow(obj1.position.y - obj2.position.y, 2) +
-          Math.pow(obj1.position.z - obj2.position.z, 2),
-      );
-      if (distance < obj1.size + obj2.size) {
-        collisions.push({ obj1, obj2, distance });
+      if (obj1.position && obj2.position) {
+        const distance = obj1.position.distanceTo(obj2.position);
+        if (distance < obj1.size + obj2.size) {
+          collisions.push({ obj1, obj2, distance });
+        }
       }
     }
   }
   return collisions;
 };
 
-const Earth = () => {
-  const meshRef = useRef();
+const Earth: React.FC = () => {
+  const meshRef = useRef<THREE.Mesh>(null);
   const texture = useMemo(
     () => new THREE.TextureLoader().load("/assets/3d/earth.jpg"),
     [],
@@ -102,25 +123,33 @@ const Earth = () => {
   );
 };
 
-const SpaceObject = ({ object, onClick, setPosition }) => {
-  const meshRef = useRef();
+interface SpaceObjectProps {
+  object: SpaceObject;
+  onClick: (object: SpaceObject) => void;
+  setPosition: (id: string, position: THREE.Vector3) => void;
+}
+
+const SpaceObject: React.FC<SpaceObjectProps> = ({
+  object,
+  onClick,
+  setPosition,
+}) => {
+  const meshRef = useRef<THREE.Mesh>(null);
 
   useFrame(({ clock }) => {
-    const t = clock.getElapsedTime() * object.speed;
-
-    // Calculate position using elliptical orbit equation
-    const a = object.orbitRadius; // Semi-major axis
-    const b = a * Math.sqrt(1 - object.eccentricity * object.eccentricity); // Semi-minor axis
-    const angle = t + object.phase;
-
-    const x = a * Math.cos(angle) * Math.cos(object.inclination);
-    const y = b * Math.sin(angle);
-    const z = a * Math.cos(angle) * Math.sin(object.inclination);
-
     if (meshRef.current) {
+      const t = clock.getElapsedTime() * object.speed;
+      const a = object.orbitRadius;
+      const b = a * Math.sqrt(1 - object.eccentricity * object.eccentricity);
+      const angle = t + object.phase;
+
+      const x = a * Math.cos(angle) * Math.cos(object.inclination);
+      const y = b * Math.sin(angle);
+      const z = a * Math.cos(angle) * Math.sin(object.inclination);
+
       meshRef.current.position.set(x, y, z);
+      setPosition(object.id, new THREE.Vector3(x, y, z));
     }
-    setPosition(object.id, { x, y, z });
   });
 
   const color = {
@@ -138,7 +167,13 @@ const SpaceObject = ({ object, onClick, setPosition }) => {
   );
 };
 
-const Scene = ({ data, onObjectClick, setPosition }) => {
+interface SceneProps {
+  data: SpaceObject[];
+  onObjectClick: (object: SpaceObject) => void;
+  setPosition: (id: string, position: THREE.Vector3) => void;
+}
+
+const Scene: React.FC<SceneProps> = ({ data, onObjectClick, setPosition }) => {
   return (
     <>
       <ambientLight intensity={0.5} />
@@ -166,8 +201,14 @@ const Scene = ({ data, onObjectClick, setPosition }) => {
   );
 };
 
-const ObjectTypeDistribution = ({ data }) => {
-  const typeCount = data.reduce((acc, obj) => {
+interface ObjectTypeDistributionProps {
+  data: SpaceObject[];
+}
+
+const ObjectTypeDistribution: React.FC<ObjectTypeDistributionProps> = ({
+  data,
+}) => {
+  const typeCount = data.reduce<Record<string, number>>((acc, obj) => {
     acc[obj.type] = (acc[obj.type] || 0) + 1;
     return acc;
   }, {});
@@ -192,7 +233,11 @@ const ObjectTypeDistribution = ({ data }) => {
   );
 };
 
-const CollisionAlert = ({ collision }) => (
+interface CollisionAlertProps {
+  collision: Collision;
+}
+
+const CollisionAlert: React.FC<CollisionAlertProps> = ({ collision }) => (
   <Alert className="mb-4 bg-red-100 border-red-400">
     <AlertTriangle className="h-4 w-4 text-red-600" />
     <AlertTitle className="text-red-700">Collision Detected!</AlertTitle>
@@ -211,11 +256,13 @@ const CollisionAlert = ({ collision }) => (
   </Alert>
 );
 
-export default function SpaceDebrisVisualization3D() {
-  const [data, setData] = useState([]);
-  const [selectedObject, setSelectedObject] = useState(null);
-  const [collisions, setCollisions] = useState([]);
-  const objectPositions = useRef({});
+const SpaceDebrisVisualization3D: React.FC = () => {
+  const [data, setData] = useState<SpaceObject[]>([]);
+  const [selectedObject, setSelectedObject] = useState<SpaceObject | null>(
+    null,
+  );
+  const [collisions, setCollisions] = useState<Collision[]>([]);
+  const objectPositions = useRef<Record<string, THREE.Vector3>>({});
 
   const generateNewSample = async () => {
     const nasaData = await fetchNASAData();
@@ -229,11 +276,11 @@ export default function SpaceDebrisVisualization3D() {
     generateNewSample();
   }, []);
 
-  const handleObjectClick = (object) => {
+  const handleObjectClick = (object: SpaceObject) => {
     setSelectedObject(object);
   };
 
-  const setPosition = (id, position) => {
+  const setPosition = (id: string, position: THREE.Vector3) => {
     objectPositions.current[id] = position;
   };
 
@@ -241,7 +288,7 @@ export default function SpaceDebrisVisualization3D() {
     const checkCollisions = () => {
       const objects = data.map((obj) => ({
         ...obj,
-        position: objectPositions.current[obj.id] || { x: 0, y: 0, z: 0 },
+        position: objectPositions.current[obj.id],
       }));
       const newCollisions = detectCollisions(objects);
       if (newCollisions.length > 0) {
@@ -249,7 +296,7 @@ export default function SpaceDebrisVisualization3D() {
       }
     };
 
-    const interval = setInterval(checkCollisions, 1000); // Check for collisions every second
+    const interval = setInterval(checkCollisions, 1000);
 
     return () => clearInterval(interval);
   }, [data]);
@@ -322,4 +369,6 @@ export default function SpaceDebrisVisualization3D() {
       </div>
     </div>
   );
-}
+};
+
+export default SpaceDebrisVisualization3D;
