@@ -117,7 +117,9 @@ const SpaceObject = ({ object, onClick, setPosition }) => {
     const y = b * Math.sin(angle);
     const z = a * Math.cos(angle) * Math.sin(object.inclination);
 
-    meshRef.current.position.set(x, y, z);
+    if (meshRef.current) {
+      meshRef.current.position.set(x, y, z);
+    }
     setPosition(object.id, { x, y, z });
   });
 
