@@ -128,7 +128,11 @@ const Earth: React.FC = () => {
   return (
     <mesh ref={meshRef}>
       <sphereGeometry args={[EARTH_RADIUS, 32, 32]} />
-      <meshStandardMaterial map={texture} emissive="#444444" emissiveIntensity={0.1} />
+      <meshStandardMaterial
+        map={texture}
+        emissive="#444444"
+        emissiveIntensity={0.1}
+      />
     </mesh>
   );
 };
@@ -193,13 +197,23 @@ interface SceneProps {
   cameraZoom: number;
 }
 
-const Scene: React.FC<SceneProps> = ({ data, onObjectClick, setPosition, cameraZoom }) => {
+const Scene: React.FC<SceneProps> = ({
+  data,
+  onObjectClick,
+  setPosition,
+  cameraZoom,
+}) => {
   return (
     <>
       <PerspectiveCamera makeDefault position={[0, 0, cameraZoom]} />
       <ambientLight intensity={0.3} />
       <pointLight position={[10, 10, 10]} intensity={1} />
-      <spotLight position={[-10, -10, -10]} angle={0.15} penumbra={1} intensity={0.5} />
+      <spotLight
+        position={[-10, -10, -10]}
+        angle={0.15}
+        penumbra={1}
+        intensity={0.5}
+      />
       <Stars
         radius={100}
         depth={50}
@@ -324,9 +338,9 @@ const SpaceDebrisVisualization3D: React.FC = () => {
     return () => clearInterval(interval);
   }, [data]);
 
-  const handleZoom = (direction: 'in' | 'out') => {
-    setCameraZoom(prev => {
-      const newZoom = direction === 'in' ? prev * 0.9 : prev * 1.1;
+  const handleZoom = (direction: "in" | "out") => {
+    setCameraZoom((prev) => {
+      const newZoom = direction === "in" ? prev * 0.9 : prev * 1.1;
       return Math.max(5, Math.min(newZoom, 50)); // Limit zoom between 5 and 50
     });
   };
@@ -351,13 +365,13 @@ const SpaceDebrisVisualization3D: React.FC = () => {
           </button>
           <button
             className="bg-purple-500 hover:bg-purple-700 text-white font-bold py-2 px-4 rounded"
-            onClick={() => handleZoom('in')}
+            onClick={() => handleZoom("in")}
           >
             <ZoomIn className="h-5 w-5" />
           </button>
           <button
             className="bg-purple-500 hover:bg-purple-700 text-white font-bold py-2 px-4 rounded"
-            onClick={() => handleZoom('out')}
+            onClick={() => handleZoom("out")}
           >
             <ZoomOut className="h-5 w-5" />
           </button>
@@ -417,3 +431,4 @@ const SpaceDebrisVisualization3D: React.FC = () => {
 };
 
 export default SpaceDebrisVisualization3D;
+
