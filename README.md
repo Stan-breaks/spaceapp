@@ -21,42 +21,37 @@ space missions, and support the sustainable use of Earth’s orbits.
 
 ## **Tech Stack**
 
-- **Frontend**: [Next.js](https://nextjs.org/) – for server-side rendering and
-  optimized performance.
-- **Backend**: Custom-built high-performance API for space debris prediction.
-- **Data Visualization**: [D3.js](https://d3js.org/) or
-  [Three.js](https://threejs.org/) for rendering celestial objects in 2D/3D.
+- **Serverless app**: [Next.js](https://nextjs.org/) – for client-side rendering andoptimized performance.
+- **Data Visualization**: recharts for the graphs and [Three.js](https://threejs.org/) for rendering celestial objects in 2D/3D.
 - **Data Source**: NASA's databases for accurate real-time data on celestial
   bodies.
 
 ## **Installation** To run the project locally, follow these steps:
 
-1. **Clone the Repository** `bash git clone
-https://github.com/your-repo/orrery-web-app.git cd orrery-web-app `
+1. **Clone the Repository**
+   ```bash
+   git clone
+   https://github.com/your-repo/orrery-web-app.git 
+   cd orbital 
+   ```
 
-2. **Install Dependencies** Make sure you have Node.js installed. Then, run the
+3. **Install Dependencies** Make sure you have Node.js installed. Then, run the
    following command: `bash npm install `
 
-3. **Start the Development Server** Start the server and launch the app in
+4. **Start the Development Server** Start the server and launch the app in
    development mode: `bash npm run dev ` Open
    [https://spaceapp-self.vercel.app](https://spaceapp-self.vercel.app) to view
    the app in your browser.
 
-## **Usage** 1. **Interactive Orrery**: Use the app to visualize celestial
+## **Usage** 
+1. **Interactive Orrery**: Use the app to visualize celestial
 
-objects by zooming in and out. Select an object to view more information. 2.
-**API Requests**: The API service can be accessed to predict space debris
-movement and potential collisions. Example API request: `bash GET
-/api/v1/debris/predict?objectId=12345 `
+objects by zooming in and out. Select an object to view more information. 
 
 ## **Future Improvements**
 
 - **Machine Learning Integration**: Leverage machine learning models to improve
   prediction accuracy for space debris movements.
-- **Additional Celestial Objects**: Expand the database to include more
-  celestial bodies such as satellites and distant comets.
-- **User Accounts**: Allow users to track specific celestial bodies and receive
-  notifications on potential collisions.
 - **Create more visual appealing Bodies**: Enhancing the graphics of the web
   app; making the celestial bodies more visually appealing.
 
